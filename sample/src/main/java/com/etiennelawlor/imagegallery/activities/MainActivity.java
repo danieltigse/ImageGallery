@@ -1,14 +1,25 @@
 package com.etiennelawlor.imagegallery.activities;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
+import android.net.Uri;
+import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.graphics.Palette;
 import android.text.TextUtils;
+import android.util.Log;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.Toast;
 
 import com.etiennelawlor.imagegallery.R;
 import com.etiennelawlor.imagegallery.library.ImageGalleryFragment;
@@ -19,7 +30,16 @@ import com.etiennelawlor.imagegallery.library.adapters.ImageGalleryAdapter;
 import com.etiennelawlor.imagegallery.library.enums.PaletteColorType;
 import com.squareup.picasso.Callback;
 import com.squareup.picasso.Picasso;
+import com.squareup.picasso.Target;
 
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.FilenameUtils;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 
@@ -29,10 +49,12 @@ import butterknife.OnClick;
 /**
  * Created by etiennelawlor on 8/20/15.
  */
-public class MainActivity extends AppCompatActivity implements ImageGalleryAdapter.ImageThumbnailLoader, FullScreenImageGalleryAdapter.FullScreenImageLoader {
+public class MainActivity extends AppCompatActivity implements ImageGalleryAdapter.ImageThumbnailLoader, FullScreenImageGalleryAdapter.FullScreenImageLoader, FullScreenImageGalleryAdapter.FullScreenImageDownloader {
 
     // region Member Variables
     private PaletteColorType paletteColorType;
+    private static int MY_REQUEST_CODE = 123;
+    private String imageUrlBeforePermissions;
     // endregion
 
     // region Listeners
@@ -74,9 +96,22 @@ public class MainActivity extends AppCompatActivity implements ImageGalleryAdapt
         ImageGalleryActivity.setImageThumbnailLoader(this);
         ImageGalleryFragment.setImageThumbnailLoader(this);
         FullScreenImageGalleryActivity.setFullScreenImageLoader(this);
+        FullScreenImageGalleryActivity.setFullScreenImageDownloader(this);
+        FullScreenImageGalleryActivity.setShowIconDownload(true);
 
         // optionally set background color using Palette for full screen images
         paletteColorType = PaletteColorType.VIBRANT;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == MY_REQUEST_CODE) {
+            if (permissions.length == 1 && permissions[0].equals(Manifest.permission.WRITE_EXTERNAL_STORAGE) && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                savePhoto(imageUrlBeforePermissions);
+            } else {
+                // Permission was denied. Display an error message.
+            }
+        }
     }
     // endregion
 
@@ -120,6 +155,18 @@ public class MainActivity extends AppCompatActivity implements ImageGalleryAdapt
                     });
         } else {
             iv.setImageDrawable(null);
+        }
+    }
+
+    // region FullScreenImageGalleryAdapter.FullScreenImageDownloader
+    @Override
+    public void downloadFullScreenImage(String imageUrl) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+            savePhoto(imageUrl);
+        }
+        else{
+            imageUrlBeforePermissions = imageUrl;
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, MY_REQUEST_CODE);
         }
     }
     // endregion
@@ -242,4 +289,88 @@ public class MainActivity extends AppCompatActivity implements ImageGalleryAdapt
         return bgColor;
     }
     // endregion
+
+    public void savePhoto(final String imageUrl){
+
+        String state = Environment.getExternalStorageState();
+        if (!Environment.MEDIA_MOUNTED.equals(state)) {
+            Log.e("SaveFile", "No External Storage!");
+            return;
+        }
+
+        if (!TextUtils.isEmpty(imageUrl)) {
+
+            FullScreenImageGalleryActivity.showDownloadingFile();
+            new AsyncTask<String, String, Bitmap>(){
+
+                @Override
+                protected Bitmap doInBackground(String... params) {
+                    try {
+                        Bitmap bitmap = Picasso.with(MainActivity.this).load(imageUrl).get();
+                        if(bitmap!=null){
+                            try {
+                                //create a file to write bitmap data
+                                final String mFileName = getCacheDir().getAbsolutePath() + "/" + FilenameUtils.getName(imageUrl);
+                                File mediafile =new File(mFileName);
+
+                                //Convert bitmap to byte array
+                                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                                bitmap.compress(Bitmap.CompressFormat.PNG, 0 /*ignored for PNG*/, bos);
+                                byte[] bitmapdata = bos.toByteArray();
+
+                                //write the bytes in file
+                                FileOutputStream fos = new FileOutputStream(mFileName);
+                                fos.write(bitmapdata);
+                                fos.flush();
+                                fos.close();
+
+                                //save the file
+                                String targetPath = Environment.getExternalStoragePublicDirectory(
+                                        Environment.DIRECTORY_PICTURES) + "/" + getResources().getString(R.string.app_name);
+                                File dir = new File(targetPath);
+                                if (!dir.mkdir() && !dir.isDirectory()) {
+                                    Log.e("SaveFile", "Directory not created");
+                                }
+                                targetPath += "/" + FilenameUtils.getName(imageUrl);
+                                dir = new File(targetPath);
+                                Log.d("SaveFile", "dir " + dir);
+                                try {
+                                    FileUtils.copyFile(mediafile, dir);
+                                } catch(IOException ex){
+                                    Log.e("Save File", "IOException" + ex.getMessage());
+                                }
+
+                                //rescan gallery
+                                Uri contentUri = Uri.fromFile(dir);
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT){
+                                    Intent mediaScanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+                                    mediaScanIntent.setData(contentUri);
+                                    sendBroadcast(mediaScanIntent);
+                                }
+                                else{
+                                    sendBroadcast(new Intent(Intent.ACTION_MEDIA_MOUNTED, contentUri));
+                                }
+
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                        }
+                        return bitmap;
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                        return null;
+                    }
+                }
+
+                protected void onPostExecute(Bitmap bitmap) {
+                    if(bitmap!=null) {
+                        Toast.makeText(MainActivity.this, getResources().getString(R.string.file_saved), Toast.LENGTH_SHORT).show();
+                    }
+                    FullScreenImageGalleryActivity.hideDownloadingFile();
+                }
+
+            }.execute("");
+        }
+    }
+
 }

@@ -26,5 +26,5 @@ ext {
 dependencies {
     compile "com.android.support:appcompat-v7:${supportLibVersion}"
     compile "com.android.support:recyclerview-v7:${supportLibVersion}"
-
+    compile fileTree(dir: 'libs', include: ['*.jar'])
 }

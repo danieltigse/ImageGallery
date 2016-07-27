@@ -27,6 +27,9 @@ public class FullScreenImageGalleryAdapter extends PagerAdapter {
     public interface FullScreenImageLoader {
         void loadFullScreenImage(ImageView iv, String imageUrl, int width, LinearLayout bglinearLayout);
     }
+    public interface FullScreenImageDownloader {
+        void downloadFullScreenImage(String imageUrl);
+    }
     // endregion
 
     // region Constructors

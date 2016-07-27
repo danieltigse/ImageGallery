@@ -1,18 +1,36 @@
 package com.etiennelawlor.imagegallery.library.activities;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.location.LocationManager;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.support.v4.view.ViewPager;
 import android.support.v7.app.ActionBar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
+import android.util.Log;
+import android.view.Menu;
+import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.Toast;
 
 import com.etiennelawlor.imagegallery.library.R;
 import com.etiennelawlor.imagegallery.library.adapters.FullScreenImageGalleryAdapter;
 
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.FilenameUtils;
+
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -28,10 +46,15 @@ public class FullScreenImageGalleryActivity extends AppCompatActivity implements
     private ViewPager viewPager;
     // endregion
 
+    private static MenuItem loading;
+    private static MenuItem downloading;
+
     // region Member Variables
     private List<String> images;
     private int position;
     private static FullScreenImageGalleryAdapter.FullScreenImageLoader fullScreenImageLoader;
+    private static FullScreenImageGalleryAdapter.FullScreenImageDownloader fullScreenImageDownloader;
+    private static boolean showIconDownload;
     // endregion
 
     // region Listeners
@@ -82,6 +105,7 @@ public class FullScreenImageGalleryActivity extends AppCompatActivity implements
         }
 
         setUpViewPager();
+
     }
 
     @Override
@@ -92,11 +116,33 @@ public class FullScreenImageGalleryActivity extends AppCompatActivity implements
     // endregion
 
     @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.menu_image, menu);
+        if (showIconDownload)
+            menu.getItem(0).setVisible(true);
+
+        downloading = menu.getItem(0);
+
+        loading = menu.add(0, 1, 0, "");
+        loading.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+        loading.setActionView(R.layout.action_bar_progress);
+        loading.setVisible(false);
+
+        return super.onCreateOptionsMenu(menu);
+    }
+
+    @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         if (item.getItemId() == android.R.id.home) {
             onBackPressed();
             return true;
-        } else {
+        }
+        else if (item.getItemId() == R.id.action_download){
+            fullScreenImageDownloader.downloadFullScreenImage(images.get(position));
+            return true;
+        }
+        else {
             return super.onOptionsItemSelected(item);
         }
     }
@@ -130,7 +176,7 @@ public class FullScreenImageGalleryActivity extends AppCompatActivity implements
     private void setActionBarTitle(int position) {
         if (viewPager != null && images.size() > 1) {
             int totalPages = viewPager.getAdapter().getCount();
-
+            this.position = position;
             ActionBar actionBar = getSupportActionBar();
             if(actionBar != null){
                 actionBar.setTitle(String.format("%d/%d", (position + 1), totalPages));
@@ -145,5 +191,24 @@ public class FullScreenImageGalleryActivity extends AppCompatActivity implements
     public static void setFullScreenImageLoader(FullScreenImageGalleryAdapter.FullScreenImageLoader loader) {
         fullScreenImageLoader = loader;
     }
+
+    public static void setFullScreenImageDownloader(FullScreenImageGalleryAdapter.FullScreenImageDownloader loader){
+        fullScreenImageDownloader = loader;
+    }
+
+    public static void setShowIconDownload(boolean showIcon){
+        showIconDownload = showIcon;
+    }
+
+    public static void showDownloadingFile(){
+        loading.setVisible(true);
+        downloading.setVisible(false);
+    }
+
+    public static void hideDownloadingFile(){
+        loading.setVisible(false);
+        downloading.setVisible(true);
+    }
+
     // endregion
 }
